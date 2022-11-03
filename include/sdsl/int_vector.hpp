@@ -59,6 +59,12 @@ typedef uint64_t std_size_type_for_int_vector;
 template<uint8_t t_width=0>
 class int_vector;
 
+template<uint8_t t_width=0>
+class int_vector_wrapper : public int_vector<t_width> {
+    public:
+        int_vector_wrapper(size_t size, void* data, uint8_t int_width = t_width);
+};
+
 template<class int_vector_type>
 class mm_item;
 
@@ -322,9 +328,10 @@ class int_vector
 
     private:
 
-        size_type      m_size;  //!< Number of bits needed to store int_vector.
-        uint64_t*      m_data;  //!< Pointer to the memory for the bits.
-        int_width_type m_width; //!< Width of the integers.
+        size_type      m_size;      //!< Number of bits needed to store int_vector.
+        uint64_t*      m_data;      //!< Pointer to the memory for the bits.
+        int_width_type m_width;     //!< Width of the integers.
+        bool           m_wrapper;   //!< The int-vector is used as wrapper on already existing data
 
     public:
 
@@ -336,6 +343,10 @@ class int_vector
          */
 
         int_vector(size_type size, value_type default_value,
+                   uint8_t int_width = t_width);
+
+        // Custom wrapper initializer
+        int_vector(size_type size, size_t reserved_bytes, void* data,
                    uint8_t int_width = t_width);
 
         //! Constructor to fix possible comparison with integeres issue.
@@ -1247,6 +1258,11 @@ operator<<(std::ostream& os, const t_bv& bv)
 // ==== int_vector implementation  ====
 
 template<uint8_t t_width>
+inline int_vector_wrapper<t_width>::int_vector_wrapper(size_t size, void* data, uint8_t intWidth):
+    int_vector<t_width>(size, 0ULL, data, intWidth){
+}
+
+template<uint8_t t_width>
 inline int_vector<t_width>::int_vector(size_type size, value_type default_value, uint8_t intWidth):
     m_size(0), m_data(nullptr), m_width(t_width)
 {
@@ -1254,6 +1270,18 @@ inline int_vector<t_width>::int_vector(size_type size, value_type default_value,
     resize(size);
     util::set_to_value(*this, default_value); // new initialization
 }
+
+
+template<uint8_t t_width>
+inline int_vector<t_width>::int_vector(size_type size, size_t reserved_bytes, void* data, uint8_t intWidth):
+    m_size(size), m_data(reinterpret_cast<uint64_t*>(data)), m_width(t_width)
+{
+    // use int vector as wrapper only for already existing succinctly encoded data
+    this->m_wrapper = true;
+    m_size = intWidth * size;
+    width(intWidth);
+}
+
 
 template<uint8_t t_width>
 inline int_vector<t_width>::int_vector(int_vector&& v) :
@@ -1302,7 +1330,9 @@ int_vector<t_width>& int_vector<t_width>::operator=(int_vector&& v)
 template<uint8_t t_width>
 int_vector<t_width>::~int_vector()
 {
-    memory_manager::clear(*this);
+    if (!m_wrapper) { // clear the underlying data only if this int_vector is not used as a wrapper only
+        memory_manager::clear(*this);
+    }
 }
 
 template<uint8_t t_width>
@@ -1593,6 +1623,8 @@ void int_vector<t_width>::load(std::istream& in)
     }
     in.read((char*) p, ((capacity()>>6)-idx)*sizeof(uint64_t));
 }
+
+
 
 }// end namespace sdsl
 
